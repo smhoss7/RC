@@ -38,12 +38,14 @@
 typedef struct {
     char ds_ip[64];
     char ds_port[16];
-    char peer_port[16];      /* this instance's TCP port for future file transfer */
- 
+    char peer_port[16];
+} DSConfig;     /* this instance's TCP port for future file transfer */
+
+typedef struct {
     int  logged_in;          /* 0 = not logged in, 1 = logged in */
     char uid[UID_LEN + 1];
     char password[PASSWORD_LEN + 1];
-} AppState;
+} UserSession;;
  
 /* ---------------------------------------------------------------------------
  * Validation helpers
@@ -220,9 +222,9 @@ static int parse_status_reply(const char *reply, char *tag_out, size_t tag_size,
  * Command handlers
  * -------------------------------------------------------------------------*/
  
-static void cmd_login(AppState *st, const char *uid, const char *password) {
-    if (st->logged_in) {
-        printf("You are already logged in as %s. Logout first.\n", st->uid);
+static void cmd_login(const DSConfig *cfg, UserSession *sess, const char *uid, const char *password) {
+    if (sess->logged_in) {
+        printf("You are already logged in as %s. Logout first.\n", sess->uid);
         return;
     }
     if (!is_n_digits(uid, UID_LEN)) {
@@ -236,9 +238,9 @@ static void cmd_login(AppState *st, const char *uid, const char *password) {
     }
  
     char msg[MAX_MSG], reply[MAX_MSG];
-    build_login_msg(msg, sizeof(msg), uid, password, st->peer_port);
+    build_login_msg(msg, sizeof(msg), uid, password, cfg->peer_port);
  
-    if (send_udp_request(st->ds_ip, st->ds_port, msg, reply, sizeof(reply)) != 0) {
+    if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
         printf("Login failed: no response from Directory Server.\n");
         return;
     }
@@ -252,16 +254,16 @@ static void cmd_login(AppState *st, const char *uid, const char *password) {
  
     if (strcmp(status, "OK") == 0) {
         printf("Successful login.\n");
-        st->logged_in = 1;
-        strncpy(st->uid, uid, UID_LEN); st->uid[UID_LEN] = '\0';
-        strncpy(st->password, password, PASSWORD_LEN); st->password[PASSWORD_LEN] = '\0';
+        sess->logged_in = 1;
+        strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
+        strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
     } else if (strcmp(status, "NOK") == 0) {
         printf("Incorrect login attempt.\n");
     } else if (strcmp(status, "REG") == 0) {
         printf("New user registered and logged in.\n");
-        st->logged_in = 1;
-        strncpy(st->uid, uid, UID_LEN); st->uid[UID_LEN] = '\0';
-        strncpy(st->password, password, PASSWORD_LEN); st->password[PASSWORD_LEN] = '\0';
+        sess->logged_in = 1;
+        strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
+        strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
     } else if (strcmp(status, "ERR") == 0) {
         printf("Login failed: DS reports a protocol error.\n");
     } else {
@@ -269,16 +271,16 @@ static void cmd_login(AppState *st, const char *uid, const char *password) {
     }
 }
  
-static void cmd_logout(AppState *st) {
-    if (!st->logged_in) {
+static void cmd_logout(const DSConfig *cfg, UserSession *sess) {
+    if (!sess->logged_in) {
         printf("No user is currently logged in.\n");
         return;
     }
  
     char msg[MAX_MSG], reply[MAX_MSG];
-    build_logout_msg(msg, sizeof(msg), st->uid, st->password);
+    build_logout_msg(msg, sizeof(msg), sess->uid, sess->password);
  
-    if (send_udp_request(st->ds_ip, st->ds_port, msg, reply, sizeof(reply)) != 0) {
+    if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
         printf("Logout failed: no response from Directory Server.\n");
         return;
     }
@@ -292,9 +294,9 @@ static void cmd_logout(AppState *st) {
  
     if (strcmp(status, "OK") == 0) {
         printf("Successful logout.\n");
-        st->logged_in = 0;
-        memset(st->uid, 0, sizeof(st->uid));
-        memset(st->password, 0, sizeof(st->password));
+        sess->logged_in = 0;
+        memset(sess->uid, 0, sizeof(sess->uid));
+        memset(sess->password, 0, sizeof(sess->password));
     } else if (strcmp(status, "NLG") == 0) {
         printf("User is not logged in.\n");
     } else if (strcmp(status, "UNR") == 0) {
@@ -308,16 +310,16 @@ static void cmd_logout(AppState *st) {
     }
 }
  
-static void cmd_unregister(AppState *st) {
-    if (!st->logged_in) {
+static void cmd_unregister(const DSConfig *cfg, UserSession *sess) {
+    if (!sess->logged_in) {
         printf("No user is currently logged in.\n");
         return;
     }
  
     char msg[MAX_MSG], reply[MAX_MSG];
-    build_unregister_msg(msg, sizeof(msg), st->uid, st->password);
+    build_unregister_msg(msg, sizeof(msg), sess->uid, sess->password);
  
-    if (send_udp_request(st->ds_ip, st->ds_port, msg, reply, sizeof(reply)) != 0) {
+    if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
         printf("Unregister failed: no response from Directory Server.\n");
         return;
     }
@@ -332,9 +334,9 @@ static void cmd_unregister(AppState *st) {
     if (strcmp(status, "OK") == 0) {
         printf("Successful unregister.\n");
         /* unregister implies a logout as well */
-        st->logged_in = 0;
-        memset(st->uid, 0, sizeof(st->uid));
-        memset(st->password, 0, sizeof(st->password));
+        sess->logged_in = 0;
+        memset(sess->uid, 0, sizeof(sess->uid));
+        memset(sess->password, 0, sizeof(sess->password));
     } else if (strcmp(status, "NOK") == 0) {
         printf("Incorrect unregister attempt (user not logged in).\n");
     } else if (strcmp(status, "UNR") == 0) {
@@ -370,7 +372,7 @@ static void print_help(void) {
         "  exit\n");
 }
  
-static void command_loop(AppState *st) {
+static void command_loop(const DSConfig *cfg, UserSession *sess) {
     char line[MAX_CMD_LINE];
  
     printf("NetBoX User application ready. Type a command (or 'exit').\n");
@@ -382,7 +384,7 @@ static void command_loop(AppState *st) {
         if (fgets(line, sizeof(line), stdin) == NULL) {
             /* EOF (e.g. Ctrl-D) - treat like exit, but respect the logout rule */
             putchar('\n');
-            if (st->logged_in) {
+            if (sess->logged_in) {
                 printf("Please logout before exiting.\n");
                 continue;
             }
@@ -408,16 +410,16 @@ static void command_loop(AppState *st) {
                 printf("Usage: login UID password\n");
                 continue;
             }
-            cmd_login(st, uid, password);
+            cmd_login(cfg, sess, uid, password);
  
         } else if (strcmp(cmd, "logout") == 0) {
-            cmd_logout(st);
+            cmd_logout(cfg, sess);
  
         } else if (strcmp(cmd, "unregister") == 0) {
-            cmd_unregister(st);
+            cmd_unregister(cfg, sess);
  
         } else if (strcmp(cmd, "exit") == 0) {
-            if (st->logged_in) {
+            if (sess->logged_in) {
                 printf("Please logout before exiting.\n");
             } else {
                 break;
@@ -440,10 +442,10 @@ static void usage(const char *prog) {
     fprintf(stderr, "Usage: %s -m peerport [-n DSIP] [-p DSport]\n", prog);
 }
  
-static int parse_args(int argc, char *argv[], AppState *st) {
+static int parse_args(int argc, char *argv[], DSConfig *cfg) {
     int have_peer_port = 0;
-    strncpy(st->ds_ip, DEFAULT_DS_IP, sizeof(st->ds_ip) - 1);
-    strncpy(st->ds_port, DEFAULT_DS_PORT, sizeof(st->ds_port) - 1);
+    strncpy(cfg->ds_ip, DEFAULT_DS_IP, sizeof(cfg->ds_ip) - 1);
+    strncpy(cfg->ds_port, DEFAULT_DS_PORT, sizeof(cfg->ds_port) - 1);
  
     int opt;
     while ((opt = getopt(argc, argv, "m:n:p:")) != -1) {
@@ -453,20 +455,20 @@ static int parse_args(int argc, char *argv[], AppState *st) {
                     fprintf(stderr, "Invalid peerport \"%s\" (must be 1-65535).\n", optarg);
                     return -1;
                 }
-                strncpy(st->peer_port, optarg, sizeof(st->peer_port) - 1);
+                strncpy(cfg->peer_port, optarg, sizeof(cfg->peer_port) - 1);
                 have_peer_port = 1;
                 break;
             case 'n':
-                strncpy(st->ds_ip, optarg, sizeof(st->ds_ip) - 1);
-                st->ds_ip[sizeof(st->ds_ip) - 1] = '\0';
+                strncpy(cfg->ds_ip, optarg, sizeof(cfg->ds_ip) - 1);
+                cfg->ds_ip[sizeof(cfg->ds_ip) - 1] = '\0';
                 break;
             case 'p':
                 if (!is_valid_port(optarg)) {
                     fprintf(stderr, "Invalid DSport \"%s\" (must be 1-65535).\n", optarg);
                     return -1;
                 }
-                strncpy(st->ds_port, optarg, sizeof(st->ds_port) - 1);
-                st->ds_port[sizeof(st->ds_port) - 1] = '\0';
+                strncpy(cfg->ds_port, optarg, sizeof(cfg->ds_port) - 1);
+                cfg->ds_port[sizeof(cfg->ds_port) - 1] = '\0';
                 break;
             default:
                 usage(argv[0]);
@@ -488,17 +490,20 @@ static int parse_args(int argc, char *argv[], AppState *st) {
  * -------------------------------------------------------------------------*/
  
 int main(int argc, char *argv[]) {
-    AppState st;
-    memset(&st, 0, sizeof(st));
+    DSConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
  
-    if (parse_args(argc, argv, &st) != 0) {
+    UserSession sess;
+    memset(&sess, 0, sizeof(sess));
+ 
+    if (parse_args(argc, argv, &cfg) != 0) {
         return EXIT_FAILURE;
     }
  
     printf("DS address: %s:%s | local peer TCP port: %s\n",
-           st.ds_ip, st.ds_port, st.peer_port);
+           cfg.ds_ip, cfg.ds_port, cfg.peer_port);
  
-    command_loop(&st);
+    command_loop(&cfg, &sess);
  
     return EXIT_SUCCESS;
 }
