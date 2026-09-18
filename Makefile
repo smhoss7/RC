@@ -1,14 +1,17 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -g
+CFLAGS = -Wall -Wextra -std=c11 -O2
 TARGET = user
-SRCS = user.c
- 
-.PHONY: all clean
- 
+OBJS = main.o network.o app.o
+
 all: $(TARGET)
- 
-$(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)
- 
+
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
 clean:
-	rm -f $(TARGET) *.o
+	rm -f $(OBJS) $(TARGET)
+
+.PHONY: all clean

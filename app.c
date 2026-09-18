@@ -1,0 +1,228 @@
+#include "app.h"
+#include "network.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+static int is_n_digits(const char *s, size_t n) {
+    if (strlen(s) != n) return 0;
+    for (size_t i = 0; i < n; i++) {
+        if (!isdigit((unsigned char)s[i])) return 0;
+    }
+    return 1;
+}
+
+static int is_n_alnum(const char *s, size_t n) {
+    if (strlen(s) != n) return 0;
+    for (size_t i = 0; i < n; i++) {
+        if (!isalnum((unsigned char)s[i])) return 0;
+    }
+    return 1;
+}
+
+static void trim_newline(char *s) {
+    size_t len = strlen(s);
+    while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r'
+                        || isspace((unsigned char)s[len - 1]))) {
+        s[--len] = '\0';
+    }
+}
+
+static void print_help(void) {
+    printf(
+        "Available commands:\n"
+        "  login UID password\n"
+        "  logout\n"
+        "  unregister\n"
+        "  exit\n");
+}
+
+static void cmd_login(const DSConfig *cfg, UserSession *sess,
+                      const char *uid, const char *password) {
+    if (sess->logged_in) {
+        printf("You are already logged in as %s. Logout first.\n", sess->uid);
+        return;
+    }
+    if (!is_n_digits(uid, UID_LEN)) {
+        printf("Invalid UID: must be exactly %d digits.\n", UID_LEN);
+        return;
+    }
+    if (!is_n_alnum(password, PASSWORD_LEN)) {
+        printf("Invalid password: must be exactly %d alphanumeric characters.\n",
+               PASSWORD_LEN);
+        return;
+    }
+
+    char msg[MAX_MSG], reply[MAX_MSG];
+    build_login_msg(msg, sizeof(msg), uid, password, cfg->peer_port);
+
+    if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
+        printf("Login failed: no response from Directory Server.\n");
+        return;
+    }
+
+    char tag[16], status[16];
+    if (parse_status_reply(reply, tag, sizeof(tag), status, sizeof(status)) != 0
+        || strcmp(tag, "RLI") != 0) {
+        printf("Login failed: unexpected reply from DS (\"%s\").\n", reply);
+        return;
+    }
+
+    if (strcmp(status, "OK") == 0) {
+        printf("Successful login.\n");
+        sess->logged_in = 1;
+        strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
+        strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
+    } else if (strcmp(status, "NOK") == 0) {
+        printf("Incorrect login attempt.\n");
+    } else if (strcmp(status, "REG") == 0) {
+        printf("New user registered and logged in.\n");
+        sess->logged_in = 1;
+        strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
+        strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
+    } else if (strcmp(status, "ERR") == 0) {
+        printf("Login failed: DS reports a protocol error.\n");
+    } else {
+        printf("Login failed: unknown status \"%s\".\n", status);
+    }
+}
+
+static void cmd_logout(const DSConfig *cfg, UserSession *sess) {
+    if (!sess->logged_in) {
+        printf("No user is currently logged in.\n");
+        return;
+    }
+
+    char msg[MAX_MSG], reply[MAX_MSG];
+    build_logout_msg(msg, sizeof(msg), sess->uid, sess->password);
+
+    if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
+        printf("Logout failed: no response from Directory Server.\n");
+        return;
+    }
+
+    char tag[16], status[16];
+    if (parse_status_reply(reply, tag, sizeof(tag), status, sizeof(status)) != 0
+        || strcmp(tag, "RLO") != 0) {
+        printf("Logout failed: unexpected reply from DS (\"%s\").\n", reply);
+        return;
+    }
+
+    if (strcmp(status, "OK") == 0) {
+        printf("Successful logout.\n");
+        sess->logged_in = 0;
+        memset(sess->uid, 0, sizeof(sess->uid));
+        memset(sess->password, 0, sizeof(sess->password));
+    } else if (strcmp(status, "NLG") == 0) {
+        printf("User is not logged in.\n");
+    } else if (strcmp(status, "UNR") == 0) {
+        printf("User is not registered.\n");
+    } else if (strcmp(status, "WRP") == 0) {
+        printf("Incorrect password.\n");
+    } else if (strcmp(status, "ERR") == 0) {
+        printf("Logout failed: DS reports a protocol error.\n");
+    } else {
+        printf("Logout failed: unknown status \"%s\".\n", status);
+    }
+}
+
+static void cmd_unregister(const DSConfig *cfg, UserSession *sess) {
+    if (!sess->logged_in) {
+        printf("No user is currently logged in.\n");
+        return;
+    }
+
+    char msg[MAX_MSG], reply[MAX_MSG];
+    build_unregister_msg(msg, sizeof(msg), sess->uid, sess->password);
+
+    if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
+        printf("Unregister failed: no response from Directory Server.\n");
+        return;
+    }
+
+    char tag[16], status[16];
+    if (parse_status_reply(reply, tag, sizeof(tag), status, sizeof(status)) != 0
+        || strcmp(tag, "RUR") != 0) {
+        printf("Unregister failed: unexpected reply from DS (\"%s\").\n", reply);
+        return;
+    }
+
+    if (strcmp(status, "OK") == 0) {
+        printf("Successful unregister.\n");
+        sess->logged_in = 0;
+        memset(sess->uid, 0, sizeof(sess->uid));
+        memset(sess->password, 0, sizeof(sess->password));
+    } else if (strcmp(status, "NOK") == 0) {
+        printf("Incorrect unregister attempt (user not logged in).\n");
+    } else if (strcmp(status, "UNR") == 0) {
+        printf("Unknown user (not registered).\n");
+    } else if (strcmp(status, "WRP") == 0) {
+        printf("Incorrect password.\n");
+    } else if (strcmp(status, "ERR") == 0) {
+        printf("Unregister failed: DS reports a protocol error.\n");
+    } else {
+        printf("Unregister failed: unknown status \"%s\".\n", status);
+    }
+}
+
+void command_loop(const DSConfig *cfg, UserSession *sess) {
+    char line[MAX_CMD_LINE];
+
+    printf("NetBoX User application ready. Type a command (or 'exit').\n");
+
+    while (1) {
+        printf("> ");
+        fflush(stdout);
+
+        if (fgets(line, sizeof(line), stdin) == NULL) {
+            putchar('\n');
+            if (sess->logged_in) {
+                printf("Please logout before exiting.\n");
+                continue;
+            }
+            break;
+        }
+
+        trim_newline(line);
+        if (line[0] == '\0') continue;
+
+        char cmd[32] = {0};
+        int consumed = 0;
+        if (sscanf(line, "%31s%n", cmd, &consumed) != 1) {
+            printf("Unrecognized command. ");
+            print_help();
+            continue;
+        }
+        char *rest = line + consumed;
+        while (*rest == ' ') rest++;
+
+        if (strcmp(cmd, "login") == 0) {
+            char uid[64] = {0}, password[64] = {0};
+            if (sscanf(rest, "%63s %63s", uid, password) != 2) {
+                printf("Usage: login UID password\n");
+                continue;
+            }
+            cmd_login(cfg, sess, uid, password);
+
+        } else if (strcmp(cmd, "logout") == 0) {
+            cmd_logout(cfg, sess);
+
+        } else if (strcmp(cmd, "unregister") == 0) {
+            cmd_unregister(cfg, sess);
+
+        } else if (strcmp(cmd, "exit") == 0) {
+            if (sess->logged_in) {
+                printf("Please logout before exiting.\n");
+            } else {
+                break;
+            }
+
+        } else {
+            printf("Unrecognized command \"%s\". ", cmd);
+            print_help();
+        }
+    }
+
+    printf("Bye.\n");
+}
