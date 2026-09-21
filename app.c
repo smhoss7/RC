@@ -5,27 +5,28 @@
 #include <string.h>
 #include <ctype.h>
 
-static int is_n_digits(const char *s, size_t n) {
-    if (strlen(s) != n) return 0;
-    for (size_t i = 0; i < n; i++) {
-        if (!isdigit((unsigned char)s[i])) return 0;
+static int check_uid(const char *str, size_t expected_len) {
+    if (strlen(str) != expected_len) return 0;
+    for (size_t i = 0; i < expected_len; i++) {
+        if (!isdigit((unsigned char)str[i])) return 0;
     }
     return 1;
 }
 
-static int is_n_alnum(const char *s, size_t n) {
-    if (strlen(s) != n) return 0;
-    for (size_t i = 0; i < n; i++) {
-        if (!isalnum((unsigned char)s[i])) return 0;
+static int check_pass(const char *str, size_t expected_len) {
+    if (strlen(str) != expected_len) return 0;
+    for (size_t i = 0; i < expected_len; i++) {
+        if (!isalnum((unsigned char)str[i])) return 0;
     }
     return 1;
 }
 
-static void trim_newline(char *s) {
-    size_t len = strlen(s);
-    while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r'
-                        || isspace((unsigned char)s[len - 1]))) {
-        s[--len] = '\0';
+static void clean_input(char *str) {
+    size_t len = strlen(str);
+    while (len > 0 && (str[len-1] == '\n' || str[len - 1] == '\r'
+                        || str[len - 1] == ' ')) {
+        str[len-1] = '\0';
+        len--;
     }
 }
 
@@ -38,23 +39,25 @@ static void print_help(void) {
         "  exit\n");
 }
 
-static void cmd_login(const DSConfig *cfg, UserSession *sess,
+static void handle_login(const DSConfig *cfg, UserSession *sess,
                       const char *uid, const char *password) {
+
     if (sess->logged_in) {
         printf("You are already logged in as %s. Logout first.\n", sess->uid);
         return;
     }
-    if (!is_n_digits(uid, UID_LEN)) {
+    if (!check_uid(uid, UID_LEN)) {
         printf("Invalid UID: must be exactly %d digits.\n", UID_LEN);
         return;
     }
-    if (!is_n_alnum(password, PASSWORD_LEN)) {
+    if (!check_pass(password, PASSWORD_LEN)) {
         printf("Invalid password: must be exactly %d alphanumeric characters.\n",
                PASSWORD_LEN);
         return;
     }
 
-    char msg[MAX_MSG], reply[MAX_MSG];
+    char msg[MAX_MSG];
+    char reply[MAX_MSG];
     build_login_msg(msg, sizeof(msg), uid, password, cfg->peer_port);
 
     if (send_udp_request(cfg->ds_ip, cfg->ds_port, msg, reply, sizeof(reply)) != 0) {
@@ -72,15 +75,17 @@ static void cmd_login(const DSConfig *cfg, UserSession *sess,
     if (strcmp(status, "OK") == 0) {
         printf("Successful login.\n");
         sess->logged_in = 1;
-        strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
-        strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
-    } else if (strcmp(status, "NOK") == 0) {
-        printf("Incorrect login attempt.\n");
+        strncpy(sess->uid, uid, UID_LEN); 
+        sess->uid[UID_LEN] = '\0';
+        strncpy(sess->password, password, PASSWORD_LEN); 
+        sess->password[PASSWORD_LEN] = '\0';
     } else if (strcmp(status, "REG") == 0) {
         printf("New user registered and logged in.\n");
         sess->logged_in = 1;
         strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
         strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
+    } else if (strcmp(status, "NOK") == 0) {
+        printf("Incorrect login attempt.\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Login failed: DS reports a protocol error.\n");
     } else {
@@ -88,8 +93,8 @@ static void cmd_login(const DSConfig *cfg, UserSession *sess,
     }
 }
 
-static void cmd_logout(const DSConfig *cfg, UserSession *sess) {
-    if (!sess->logged_in) {
+static void handle_logout(const DSConfig *cfg, UserSession *sess) {
+    if (!sess->logged_in) {//if logged_in is 0
         printf("No user is currently logged in.\n");
         return;
     }
@@ -127,7 +132,7 @@ static void cmd_logout(const DSConfig *cfg, UserSession *sess) {
     }
 }
 
-static void cmd_unregister(const DSConfig *cfg, UserSession *sess) {
+static void handle_unregister(const DSConfig *cfg, UserSession *sess) {
     if (!sess->logged_in) {
         printf("No user is currently logged in.\n");
         return;
@@ -167,15 +172,15 @@ static void cmd_unregister(const DSConfig *cfg, UserSession *sess) {
 }
 
 void command_loop(const DSConfig *cfg, UserSession *sess) {
-    char line[MAX_CMD_LINE];
-
-    printf("NetBoX User application ready. Type a command (or 'exit').\n");
+    char input[MAX_CMD_LINE];
+    char cmd[32] = {0};
+    printf("NetBoX ready. Type a command or 'exit' to quit.\n");
 
     while (1) {
         printf("> ");
         fflush(stdout);
 
-        if (fgets(line, sizeof(line), stdin) == NULL) {
+        if (!fgets(input, sizeof(input), stdin)) {//if fgets == NULL
             putchar('\n');
             if (sess->logged_in) {
                 printf("Please logout before exiting.\n");
@@ -184,17 +189,17 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
             break;
         }
 
-        trim_newline(line);
-        if (line[0] == '\0') continue;
+        clean_input(input);
+        if (input[0] == '\0') continue;
 
-        char cmd[32] = {0};
+        
         int consumed = 0;
-        if (sscanf(line, "%31s%n", cmd, &consumed) != 1) {
+        if (sscanf(input, "%31s%n", cmd, &consumed) != 1) {
             printf("Unrecognized command. ");
             print_help();
             continue;
         }
-        char *rest = line + consumed;
+        char *rest = input + consumed;
         while (*rest == ' ') rest++;
 
         if (strcmp(cmd, "login") == 0) {
@@ -203,13 +208,13 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
                 printf("Usage: login UID password\n");
                 continue;
             }
-            cmd_login(cfg, sess, uid, password);
+            handle_login(cfg, sess, uid, password);
 
         } else if (strcmp(cmd, "logout") == 0) {
-            cmd_logout(cfg, sess);
+            handle_logout(cfg, sess);
 
         } else if (strcmp(cmd, "unregister") == 0) {
-            cmd_unregister(cfg, sess);
+            handle_unregister(cfg, sess);
 
         } else if (strcmp(cmd, "exit") == 0) {
             if (sess->logged_in) {
