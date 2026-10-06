@@ -10,6 +10,9 @@ void usage(const char *prog);
 int  parse_args(int argc, char *argv[], DSConfig *cfg);
 
 /* Core Networking */
+/* Sends a UDP request to the Directory Server and waits for a reply
+ * Returns 0 on success, -1 on failure
+ * The reply is copied into reply_out */
 int  send_udp_request(const char *ds_ip, const char *ds_port,
                       const char *request,
                       char *reply_out, size_t reply_out_size);
