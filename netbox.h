@@ -14,12 +14,14 @@
 #define UDP_TIMEOUT_S   5
 #define UDP_MAX_RETRIES 3
 
+/** Directory Server Configuration */
 typedef struct {
     char ds_ip[64];
     char ds_port[16];
     char peer_port[16];
 } DSConfig;
 
+/** User Session */
 typedef struct {
     int  logged_in;
     char uid[UID_LEN + 1];

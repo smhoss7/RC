@@ -229,5 +229,5 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
         }
     }
 
-    printf("Bye.\n");
+    printf("Bye! <3\n");
 }
