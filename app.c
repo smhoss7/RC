@@ -32,7 +32,7 @@ static void clean_input(char *str) {
 
 static void print_help(void) {
     printf(
-        "Available commands:\n"
+        "\n\nTry one of the following commands:\n"
         "  login UID password\n"
         "  logout\n"
         "  unregister\n"
@@ -47,11 +47,11 @@ static void handle_login(const DSConfig *cfg, UserSession *sess,
         return;
     }
     if (!check_uid(uid, UID_LEN)) {
-        printf("Invalid UID: must be exactly %d digits.\n", UID_LEN);
+        printf("Invalid UID: must be %d digits.\n", UID_LEN);
         return;
     }
     if (!check_pass(password, PASSWORD_LEN)) {
-        printf("Invalid password: must be exactly %d alphanumeric characters.\n",
+        printf("Invalid password: must be %d alphanumeric characters.\n",
                PASSWORD_LEN);
         return;
     }
@@ -73,7 +73,7 @@ static void handle_login(const DSConfig *cfg, UserSession *sess,
     }
 
     if (strcmp(status, "OK") == 0) {
-        printf("Successful login.\n");
+        printf("You are now logged in.\n\nWelcome back %s!\n", uid);
         sess->logged_in = 1;
         strncpy(sess->uid, uid, UID_LEN); 
         sess->uid[UID_LEN] = '\0';
@@ -85,7 +85,7 @@ static void handle_login(const DSConfig *cfg, UserSession *sess,
         strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
         strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
     } else if (strcmp(status, "NOK") == 0) {
-        printf("Incorrect login attempt.\n");
+        printf("Incorrect login attempt. Try again.\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Login failed: DS reports a protocol error.\n");
     } else {
@@ -115,7 +115,7 @@ static void handle_logout(const DSConfig *cfg, UserSession *sess) {
     }
 
     if (strcmp(status, "OK") == 0) {
-        printf("Successful logout.\n");
+        printf("You are now logged out.\n");
         sess->logged_in = 0;
         memset(sess->uid, 0, sizeof(sess->uid));
         memset(sess->password, 0, sizeof(sess->password));
@@ -124,7 +124,7 @@ static void handle_logout(const DSConfig *cfg, UserSession *sess) {
     } else if (strcmp(status, "UNR") == 0) {
         printf("User is not registered.\n");
     } else if (strcmp(status, "WRP") == 0) {
-        printf("Incorrect password.\n");
+        printf("Incorrect password. Try again.\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Logout failed: DS reports a protocol error.\n");
     } else {
@@ -174,7 +174,8 @@ static void handle_unregister(const DSConfig *cfg, UserSession *sess) {
 void command_loop(const DSConfig *cfg, UserSession *sess) {
     char input[MAX_CMD_LINE];
     char cmd[32] = {0};
-    printf("NetBoX ready. Type a command or 'exit' to quit.\n");
+    printf("\n\nNetBoX is ready for you!\n\n"
+                "Type a command, to talk, or 'exit', to leave.\n\nHave fun! :)\n");
 
     while (1) {
         printf("> ");
@@ -183,7 +184,7 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
         if (!fgets(input, sizeof(input), stdin)) {//if fgets == NULL
             putchar('\n');
             if (sess->logged_in) {
-                printf("Please logout before exiting.\n");
+                printf("Don't forget to logout before exiting.\n");
                 continue;
             }
             break;
@@ -195,7 +196,7 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
         
         int consumed = 0;
         if (sscanf(input, "%31s%n", cmd, &consumed) != 1) {
-            printf("Unrecognized command. ");
+            printf("I don't recognized that command. ");
             print_help();
             continue;
         }
@@ -205,7 +206,7 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
         if (strcmp(cmd, "login") == 0) {
             char uid[64] = {0}, password[64] = {0};
             if (sscanf(rest, "%63s %63s", uid, password) != 2) {
-                printf("Usage: login UID password\n");
+                printf("Format: login UID password\n");
                 continue;
             }
             handle_login(cfg, sess, uid, password);
@@ -218,13 +219,13 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
 
         } else if (strcmp(cmd, "exit") == 0) {
             if (sess->logged_in) {
-                printf("Please logout before exiting.\n");
+                printf("Don't forget to logout before exiting.\n");
             } else {
                 break;
             }
 
         } else {
-            printf("Unrecognized command \"%s\". ", cmd);
+            printf("I don't recognized the command \"%s\". ", cmd);
             print_help();
         }
     }
