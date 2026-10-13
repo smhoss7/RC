@@ -17,7 +17,7 @@
 //  */
 // static void clean_input(char *str);
 
-// /** Prints the help message
+// /** When the user types a wrong command, it prints a command guide
 //  */
 // static void print_help(void);
 

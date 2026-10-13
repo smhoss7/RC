@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+
 static int check_uid(const char *str, size_t expected_len) {
     if (strlen(str) != expected_len) return 0;
     for (size_t i = 0; i < expected_len; i++) {
@@ -61,6 +62,8 @@ static void clean_input(char *str) {
     }
 }
 
+/** When the user types a wrong command, it prints a command guide
+ */
 static void print_help(void) {
     printf(
         "\n\nTry one of the following commands:\n"
@@ -120,7 +123,7 @@ static void handle_login(const DSConfig *cfg, UserSession *sess,
         strncpy(sess->uid, uid, UID_LEN); sess->uid[UID_LEN] = '\0';
         strncpy(sess->password, password, PASSWORD_LEN); sess->password[PASSWORD_LEN] = '\0';
     } else if (strcmp(status, "NOK") == 0) {
-        printf("Incorrect login attempt. Try again.\n");
+        printf("Incorrect login attempt. Try again!\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Login failed: DS reports a protocol error.\n");
     } else {
@@ -150,7 +153,7 @@ static void handle_logout(const DSConfig *cfg, UserSession *sess) {
     }
 
     if (strcmp(status, "OK") == 0) {
-        printf("You are now logged out.\n");
+        printf("You are now logged out. Goodbye %s!\n", sess->uid);
         sess->logged_in = 0;
         memset(sess->uid, 0, sizeof(sess->uid));
         memset(sess->password, 0, sizeof(sess->password));
@@ -159,7 +162,7 @@ static void handle_logout(const DSConfig *cfg, UserSession *sess) {
     } else if (strcmp(status, "UNR") == 0) {
         printf("User is not registered.\n");
     } else if (strcmp(status, "WRP") == 0) {
-        printf("Incorrect password. Try again.\n");
+        printf("Incorrect password. Try again!\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Logout failed: DS reports a protocol error.\n");
     } else {
@@ -194,11 +197,11 @@ static void handle_unregister(const DSConfig *cfg, UserSession *sess) {
         memset(sess->uid, 0, sizeof(sess->uid));
         memset(sess->password, 0, sizeof(sess->password));
     } else if (strcmp(status, "NOK") == 0) {
-        printf("Incorrect unregister attempt (user not logged in).\n");
+        printf("User is not logged in.\n");
     } else if (strcmp(status, "UNR") == 0) {
-        printf("Unknown user (not registered).\n");
+        printf("User is not registered.\n");
     } else if (strcmp(status, "WRP") == 0) {
-        printf("Incorrect password.\n");
+        printf("Incorrect password. Try again!\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Unregister failed: DS reports a protocol error.\n");
     } else {
@@ -257,13 +260,13 @@ static void handle_publish(const DSConfig *cfg, UserSession *sess,
         printf("File \"%s\" published successfully (%ld bytes, label \"%s\").\n",
                filename, fsize, label);
     } else if (strcmp(status, "NOK") == 0) {
-        printf("Unsuccessful publication of \"%s\".\n", filename);
+        printf("Unsuccessful publication of \"%s\". Try again!\n", filename);
     } else if (strcmp(status, "NLG") == 0) {
         printf("User is not logged in.\n");
     } else if (strcmp(status, "UNR") == 0) {
         printf("User is not registered.\n");
     } else if (strcmp(status, "WRP") == 0) {
-        printf("Incorrect password.\n");
+        printf("Incorrect password. Try again!\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Publish failed: DS reports a protocol error.\n");
     } else {
@@ -308,7 +311,7 @@ static void handle_remove(const DSConfig *cfg, UserSession *sess,
     } else if (strcmp(status, "UNR") == 0) {
         printf("User is not registered.\n");
     } else if (strcmp(status, "WRP") == 0) {
-        printf("Incorrect password.\n");
+        printf("Incorrect password. Try again!\n");
     } else if (strcmp(status, "ERR") == 0) {
         printf("Remove failed: DS reports a protocol error.\n");
     } else {
@@ -335,7 +338,7 @@ static void handle_list(const DSConfig *cfg) {
     }
 
     if (strcmp(status, "NOK") == 0) {
-        printf("No resources are currently available.\n");
+        printf("No resources have been published yet. Try again later!\n");
         return;
     } else if (strcmp(status, "ERR") == 0) {
         printf("List failed: DS reports a protocol error.\n");
