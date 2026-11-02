@@ -456,7 +456,7 @@ void command_loop(const DSConfig *cfg, UserSession *sess) {
             putchar('\n');
             if (sess->logged_in) {
                 printf("Don't forget to logout before exiting.\n");
-                continue;
+                handle_logout(cfg, sess);
             }
             break;
         }
